@@ -4,14 +4,9 @@ const filters = require('./url_to_markdown_common_filters.js');
 const validURL = require('@7c/validurl');
 const express = require('express');
 const rateLimit = require('express-rate-limit');
+const make_concurrency_limiter = require('./concurrency_limiter.js');
 const JSDOM = require('jsdom').JSDOM;
-const port = process.env.PORT;
 const app = express();
-
-if(!port) {
-	console.error("Please specify a port in the PORT environment variable");
-	process.exit(1);
-}
 
 // handled upstream by proxy
 
@@ -22,13 +17,28 @@ const rateLimiter = rateLimit({
 	headers: true
 });
 
+// Each conversion parses a full DOM and runs Readability + Turndown, which can
+// spike memory well beyond a typical request. Capping how many run at once
+// bounds worst-case memory on this single dyno instead of letting concurrent
+// heavy requests multiply the peak and trigger an OOM kill. Requests that
+// arrive over the cap are queued briefly rather than rejected outright, since
+// most bursts clear within a few seconds - but the wait is kept comfortably
+// under Heroku's ~30s router timeout so a queued request still gets a clean
+// 503 instead of a router-level timeout if the dyno stays busy.
+const max_concurrent_conversions = parseInt(process.env.MAX_CONCURRENT_CONVERSIONS || '3', 10);
+const concurrencyLimiter = make_concurrency_limiter(max_concurrent_conversions, {
+	maxQueueLength: max_concurrent_conversions * 4,
+	maxWaitMs: 20 * 1000
+});
+
 app.set('trust proxy', 1);
 
 app.use(rateLimiter);
+app.use(concurrencyLimiter);
 
 app.use(express.urlencoded({
   extended: true,
-  limit: '10mb'
+  limit: '8mb'
 }));
 
 function send_headers(res) {
@@ -104,5 +114,14 @@ app.post('/', function(req, res) {
 
 });
 
-app.listen(port, () => {
-})
+if (require.main === module) {
+	const port = process.env.PORT;
+	if (!port) {
+		console.error("Please specify a port in the PORT environment variable");
+		process.exit(1);
+	}
+	app.listen(port, () => {
+	})
+}
+
+module.exports = app;
