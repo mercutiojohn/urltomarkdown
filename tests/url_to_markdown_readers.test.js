@@ -3,18 +3,6 @@ const https = require('https');
 const { EventEmitter } = require('events');
 const readers = require('../url_to_markdown_readers.js');
 
-function fake_res() {
-	let sent = null;
-	let statusCode = null;
-	return {
-		header: () => {},
-		send: (body) => { sent = body; },
-		status: (code) => { statusCode = code; return { send: (body) => { sent = body; } }; },
-		get sent() { return sent; },
-		get statusCode() { return statusCode; }
-	};
-}
-
 function mock_https_get_success(body, options = {}) {
 	https.get.mockImplementation((url, opts, callback) => {
 		if (typeof opts === 'function') { callback = opts; }
@@ -90,102 +78,80 @@ test('ignore_post is falsy when no url is given', () => {
 	expect(readers.ignore_post(undefined)).toBeFalsy();
 });
 
-test('html_reader fetches, converts and sends markdown for a successful response', (done) => {
+test('html_reader fetches and converts markdown for a successful response', async () => {
 	mock_https_get_success("<html><head><title>t</title></head><body><p>hello</p></body></html>");
 	let reader = new readers.html_reader();
-	let res = fake_res();
-	res.send = (body) => {
-		expect(body).toContain("hello");
-		done();
-	};
-	reader.read_url("https://example.com", res, {});
+
+	const result = await reader.read_url("https://example.com", {});
+
+	expect(result.status).toBe(200);
+	expect(result.body).toContain("hello");
 });
 
-test('html_reader responds with 502 and the upstream status code on a non-2xx response', (done) => {
+test('html_reader responds with 502 and the upstream status code on a non-2xx response', async () => {
 	mock_https_get_success("not found", { statusCode: 404 });
 	let reader = new readers.html_reader();
-	let res = fake_res();
-	res.status = (code) => {
-		expect(code).toBe(502);
-		return { send: (body) => {
-			expect(body).toContain("404");
-			done();
-		} };
-	};
-	reader.read_url("https://example.com", res, {});
+
+	const result = await reader.read_url("https://example.com", {});
+
+	expect(result.status).toBe(502);
+	expect(result.body).toContain("404");
 });
 
-test('html_reader responds with 504 on a network error', (done) => {
+test('html_reader responds with 504 on a network error', async () => {
 	mock_https_get_error();
 	let reader = new readers.html_reader();
-	let res = fake_res();
-	res.status = (code) => {
-		expect(code).toBe(504);
-		return { send: (body) => {
-			expect(body).toContain("Sorry");
-			done();
-		} };
-	};
-	reader.read_url("https://example.com", res, {});
+
+	const result = await reader.read_url("https://example.com", {});
+
+	expect(result.status).toBe(504);
+	expect(result.body).toContain("Sorry");
 });
 
-test('html_reader responds with 413 when the fetched page exceeds the size cap', (done) => {
+test('html_reader responds with 413 when the fetched page exceeds the size cap', async () => {
 	mock_https_get_oversized();
 	let reader = new readers.html_reader();
-	let res = fake_res();
-	res.status = (code) => {
-		expect(code).toBe(413);
-		return { send: (body) => {
-			expect(body).toContain("too large");
-			done();
-		} };
-	};
-	reader.read_url("https://example.com", res, {});
+
+	const result = await reader.read_url("https://example.com", {});
+
+	expect(result.status).toBe(413);
+	expect(result.body).toContain("too large");
 });
 
-test('apple_reader fetches json and sends parsed markdown', (done) => {
+test('apple_reader fetches json and returns parsed markdown', async () => {
 	const json = JSON.stringify({ metadata: { title: 'Array' }, primaryContentSections: [] });
 	mock_https_get_success(json);
 	let reader = new readers.apple_reader();
-	let res = fake_res();
-	res.send = (body) => {
-		expect(body).toBe("# Array\n\n");
-		done();
-	};
-	reader.read_url("https://developer.apple.com/documentation/swift/array", res, { inline_title: true });
+
+	const result = await reader.read_url("https://developer.apple.com/documentation/swift/array", { inline_title: true });
+
+	expect(result.status).toBe(200);
+	expect(result.body).toBe("# Array\n\n");
 });
 
-test('apple_reader responds with 504 on a network error', (done) => {
+test('apple_reader responds with 504 on a network error', async () => {
 	mock_https_get_error();
 	let reader = new readers.apple_reader();
-	let res = fake_res();
-	res.status = (code) => {
-		expect(code).toBe(504);
-		return { send: (body) => {
-			expect(body).toContain("Sorry");
-			done();
-		} };
-	};
-	reader.read_url("https://developer.apple.com/documentation/swift/array", res, {});
+
+	const result = await reader.read_url("https://developer.apple.com/documentation/swift/array", {});
+
+	expect(result.status).toBe(504);
+	expect(result.body).toContain("Sorry");
 });
 
-test('apple_reader responds with an error when the fetched body is not valid json', (done) => {
-	// note: JSON.parse errors happen inside the async fetch callback, past the
-	// synchronous try/catch, so they surface as a generic 504 rather than a 400.
+test('apple_reader responds with 400 when the fetched body is not valid json', async () => {
+	// note: JSON.parse throws a real Error, which the reader now maps to 400
+	// rather than a fetch-failure status.
 	mock_https_get_success("not json");
 	let reader = new readers.apple_reader();
-	let res = fake_res();
-	res.status = (code) => {
-		expect(code).toBe(504);
-		return { send: (body) => {
-			expect(body).toContain("Sorry");
-			done();
-		} };
-	};
-	reader.read_url("https://developer.apple.com/documentation/swift/array", res, {});
+
+	const result = await reader.read_url("https://developer.apple.com/documentation/swift/array", {});
+
+	expect(result.status).toBe(400);
+	expect(result.body).toContain("Sorry");
 });
 
-test('stack_reader combines question and answer markdown', (done) => {
+test('stack_reader combines question and answer markdown', async () => {
 	const html =
 		"<html><head><title>q</title></head><body>" +
 		"<div id='question'><p>the question</p></div>" +
@@ -193,26 +159,20 @@ test('stack_reader combines question and answer markdown', (done) => {
 		"</body></html>";
 	mock_https_get_success(html);
 	let reader = new readers.stack_reader();
-	let res = fake_res();
-	res.send = (body) => {
-		expect(body).toContain("the question");
-		expect(body).toContain("## Answer");
-		expect(body).toContain("the answer");
-		done();
-	};
-	reader.read_url("https://stackoverflow.com/questions/1/test", res, {});
+
+	const result = await reader.read_url("https://stackoverflow.com/questions/1/test", {});
+
+	expect(result.body).toContain("the question");
+	expect(result.body).toContain("## Answer");
+	expect(result.body).toContain("the answer");
 });
 
-test('stack_reader responds with 504 on a network error', (done) => {
+test('stack_reader responds with 504 on a network error', async () => {
 	mock_https_get_error();
 	let reader = new readers.stack_reader();
-	let res = fake_res();
-	res.status = (code) => {
-		expect(code).toBe(504);
-		return { send: (body) => {
-			expect(body).toContain("Sorry");
-			done();
-		} };
-	};
-	reader.read_url("https://stackoverflow.com/questions/1/test", res, {});
+
+	const result = await reader.read_url("https://stackoverflow.com/questions/1/test", {});
+
+	expect(result.status).toBe(504);
+	expect(result.body).toContain("Sorry");
 });

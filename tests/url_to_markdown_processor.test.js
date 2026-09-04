@@ -1,14 +1,6 @@
 const processor = require('../url_to_markdown_processor.js');
 const JSDOM = require('jsdom').JSDOM;
 
-function fake_res() {
-	let headers = {};
-	return {
-		header: (name, value) => { headers[name] = value; },
-		headers
-	};
-}
-
 const test_html_document =
 	"<html><head><title>test page</title></head>" +
 	"<body><p>first paragraph</p>" +
@@ -26,62 +18,57 @@ const expected_markdown_output =
 
 test('process html with title inlined', () => {
 	const doc = new JSDOM(test_html_document);
-	const res = fake_res();
 
-	let actual_markdown_output = processor.process_dom(
-		"http://some.url", doc, res, "", { inline_title: true, ignore_links: false }
+	let { markdown } = processor.process_dom(
+		"http://some.url", doc, "", { inline_title: true, ignore_links: false }
 	);
 
-	expect(actual_markdown_output).toBe(expected_markdown_output);
+	expect(markdown).toBe(expected_markdown_output);
 })
 
-test('process html without inlining title still sets X-Title header', () => {
+test('process html without inlining title still returns the title', () => {
 	const doc = new JSDOM(test_html_document);
-	const res = fake_res();
 
-	let actual_markdown_output = processor.process_dom(
-		"http://some.url", doc, res, "", { inline_title: false, ignore_links: false }
+	let { markdown, title } = processor.process_dom(
+		"http://some.url", doc, "", { inline_title: false, ignore_links: false }
 	);
 
-	expect(actual_markdown_output.startsWith("# test page")).toBe(false);
-	expect(res.headers['X-Title']).toBe(encodeURIComponent('test page'));
+	expect(markdown.startsWith("# test page")).toBe(false);
+	expect(title).toBe(encodeURIComponent('test page'));
 });
 
 test('process html with ignore_links strips the link but keeps the image', () => {
 	const doc = new JSDOM(test_html_document);
-	const res = fake_res();
 
-	let actual_markdown_output = processor.process_dom(
-		"http://some.url", doc, res, "", { inline_title: false, ignore_links: true }
+	let { markdown } = processor.process_dom(
+		"http://some.url", doc, "", { inline_title: false, ignore_links: true }
 	);
 
-	expect(actual_markdown_output).not.toContain('](http://some.url/link)');
-	expect(actual_markdown_output).toContain('link');
+	expect(markdown).not.toContain('](http://some.url/link)');
+	expect(markdown).toContain('link');
 	// note: the ignore_links filter also strips the URL out of image markdown,
 	// leaving just the alt text - this mirrors the current filter behaviour.
-	expect(actual_markdown_output).toContain('!photo');
-	expect(actual_markdown_output).not.toContain('http://some.url/img');
+	expect(markdown).toContain('!photo');
+	expect(markdown).not.toContain('http://some.url/img');
 });
 
 test('process html defaults options when none are given explicitly', () => {
 	const doc = new JSDOM(test_html_document);
-	const res = fake_res();
 
-	let actual_markdown_output = processor.process_dom("http://some.url", doc, res, "", {});
+	let { markdown } = processor.process_dom("http://some.url", doc, "", {});
 
-	expect(actual_markdown_output).toBe(expected_markdown_output);
+	expect(markdown).toBe(expected_markdown_output);
 });
 
 test('process html handles a missing title gracefully', () => {
 	const doc = new JSDOM("<html><body><p>no title here</p></body></html>");
-	const res = fake_res();
 
-	let actual_markdown_output = processor.process_dom(
-		"http://some.url", doc, res, "", { inline_title: true }
+	let { markdown, title } = processor.process_dom(
+		"http://some.url", doc, "", { inline_title: true }
 	);
 
-	expect(actual_markdown_output).toBe("no title here");
-	expect(res.headers['X-Title']).toBeUndefined();
+	expect(markdown).toBe("no title here");
+	expect(title).toBeNull();
 });
 
 test('process html scoped to an element id only converts that fragment', () => {
@@ -91,14 +78,13 @@ test('process html scoped to an element id only converts that fragment', () => {
 		"<div id='main'><p>main content only</p></div>" +
 		"</body></html>";
 	const doc = new JSDOM(html);
-	const res = fake_res();
 
-	let actual_markdown_output = processor.process_dom(
-		"http://some.url", doc, res, "main", { inline_title: false, improve_readability: false }
+	let { markdown } = processor.process_dom(
+		"http://some.url", doc, "main", { inline_title: false, improve_readability: false }
 	);
 
-	expect(actual_markdown_output).toBe("main content only");
-	expect(actual_markdown_output).not.toContain("navigation");
+	expect(markdown).toBe("main content only");
+	expect(markdown).not.toContain("navigation");
 });
 
 test('process html with clean disabled skips Readability extraction', () => {
@@ -107,15 +93,14 @@ test('process html with clean disabled skips Readability extraction', () => {
 		"<nav>site nav</nav><p>real content</p><footer>footer text</footer>" +
 		"</body></html>";
 	const doc = new JSDOM(html);
-	const res = fake_res();
 
-	let actual_markdown_output = processor.process_dom(
-		"http://some.url", doc, res, "", { inline_title: false, improve_readability: false }
+	let { markdown } = processor.process_dom(
+		"http://some.url", doc, "", { inline_title: false, improve_readability: false }
 	);
 
-	expect(actual_markdown_output).toContain("site nav");
-	expect(actual_markdown_output).toContain("real content");
-	expect(actual_markdown_output).toContain("footer text");
+	expect(markdown).toContain("site nav");
+	expect(markdown).toContain("real content");
+	expect(markdown).toContain("footer text");
 });
 
 test('process html converts embedded tables via the table formatter', () => {
@@ -124,13 +109,12 @@ test('process html converts embedded tables via the table formatter', () => {
 		"<table><tr><td>One</td><td>Two</td></tr><tr><td>1</td><td>2</td></tr></table>" +
 		"</body></html>";
 	const doc = new JSDOM(html);
-	const res = fake_res();
 
-	let actual_markdown_output = processor.process_dom(
-		"http://some.url", doc, res, "", { inline_title: false, improve_readability: false }
+	let { markdown } = processor.process_dom(
+		"http://some.url", doc, "", { inline_title: false, improve_readability: false }
 	);
 
-	expect(actual_markdown_output).toContain("|One|Two|");
+	expect(markdown).toContain("|One|Two|");
 });
 
 test('process html converts embedded code blocks via the codeblock formatter', () => {
@@ -139,14 +123,13 @@ test('process html converts embedded code blocks via the codeblock formatter', (
 		"<pre><code>const x = 1;</code></pre>" +
 		"</body></html>";
 	const doc = new JSDOM(html);
-	const res = fake_res();
 
-	let actual_markdown_output = processor.process_dom(
-		"http://some.url", doc, res, "", { inline_title: false, improve_readability: false }
+	let { markdown } = processor.process_dom(
+		"http://some.url", doc, "", { inline_title: false, improve_readability: false }
 	);
 
-	expect(actual_markdown_output).toContain("```");
-	expect(actual_markdown_output).toContain("const x = 1;");
+	expect(markdown).toContain("```");
+	expect(markdown).toContain("const x = 1;");
 });
 
 test('process html applies domain-specific filters via the url', () => {
@@ -155,13 +138,12 @@ test('process html applies domain-specific filters via the url', () => {
 		"<p><a href='/relative-page'>relative link</a></p>" +
 		"</body></html>";
 	const doc = new JSDOM(html);
-	const res = fake_res();
 
-	let actual_markdown_output = processor.process_dom(
-		"https://example.com/section/page", doc, res, "", { inline_title: false }
+	let { markdown } = processor.process_dom(
+		"https://example.com/section/page", doc, "", { inline_title: false }
 	);
 
-	expect(actual_markdown_output).toContain("[relative link](https://example.com/relative-page)");
+	expect(markdown).toContain("[relative link](https://example.com/relative-page)");
 });
 
 test('process html with no url skips domain-specific filtering', () => {
@@ -170,11 +152,10 @@ test('process html with no url skips domain-specific filtering', () => {
 		"<p><a href='/relative-page'>relative link</a></p>" +
 		"</body></html>";
 	const doc = new JSDOM(html);
-	const res = fake_res();
 
-	let actual_markdown_output = processor.process_dom(
-		undefined, doc, res, "", { inline_title: false }
+	let { markdown } = processor.process_dom(
+		undefined, doc, "", { inline_title: false }
 	);
 
-	expect(actual_markdown_output).toContain("[relative link](/relative-page)");
+	expect(markdown).toContain("[relative link](/relative-page)");
 });

@@ -72,71 +72,83 @@ function fetch_url (url, success, failure) {
 	fetch.then( (response) => success(response) ).catch( (code) => failure(code) );
 }
 
-function send_fetch_failure(res, code) {
+function fetch_url_promise(url) {
+	return new Promise((resolve, reject) => {
+		fetch_url(url, resolve, reject);
+	});
+}
+
+function build_fetch_failure(code) {
 	if (code === 'too_large') {
-		res.status(413).send(failure_message + " as the page was too large to convert");
+		return { status: 413, body: failure_message + " as the page was too large to convert" };
 	} else if (code && Number.isInteger(code)) {
-		res.status(502).send(failure_message + " as the website you are trying to convert returned status code " + code);
+		return { status: 502, body: failure_message + " as the website you are trying to convert returned status code " + code };
 	} else {
-		res.status(504).send(failure_message);
+		return { status: 504, body: failure_message };
 	}
 }
 
+function success_result(markdown, title) {
+	const headers = {};
+	if (title) headers['X-Title'] = title;
+	return { status: 200, headers, body: markdown };
+}
+
 class html_reader {
-	read_url(url, res, options) {
+	async read_url(url, options) {
 		try {
-			fetch_url(url, (html) => {
-				html = filters.strip_style_and_script_blocks(html);
-				const document = new JSDOM(html);
-				const id = "";
-				let markdown = processor.process_dom(url, document, res, id, options);
-				res.send(markdown);
-			}, (code) => {
-				send_fetch_failure(res, code);
-			});
+			const html = await fetch_url_promise(url);
+			const stripped = filters.strip_style_and_script_blocks(html);
+			const document = new JSDOM(stripped);
+			const { markdown, title } = processor.process_dom(url, document, "", options);
+			return success_result(markdown, title);
 		} catch(error) {
-			res.status(400).send(failure_message);
+			if (error instanceof Error) {
+				return { status: 400, body: failure_message };
+			}
+			return build_fetch_failure(error);
 		}
 	}
 }
 
 class apple_reader {
-	read_url(url, res, options) {
+	async read_url(url, options) {
 		try {
 			let json_url = apple_dev_parser.dev_doc_url(url);
-			fetch_url(json_url, (body) => {
-	            let json = JSON.parse(body);
-	            let markdown = apple_dev_parser.parse_dev_doc_json(json, options.inline_title, options.ignore_links);
-	            res.send(markdown);
-			}, (code) => {
-				send_fetch_failure(res, code);
-			});
+			const body = await fetch_url_promise(json_url);
+			let json = JSON.parse(body);
+			let markdown = apple_dev_parser.parse_dev_doc_json(json, options.inline_title, options.ignore_links);
+			return { status: 200, headers: {}, body: markdown };
 		} catch(error) {
-			res.status(400).send(failure_message);
+			if (error instanceof Error) {
+				return { status: 400, body: failure_message };
+			}
+			return build_fetch_failure(error);
 		}
 	}
 }
 
 class stack_reader {
-	read_url(url, res, options) {
+	async read_url(url, options) {
 		try {
-			fetch_url(url, (html) => {
-				html = filters.strip_style_and_script_blocks(html);
-				const document = new JSDOM(html);
-				let markdown_q = processor.process_dom(url, document, res, 'question', options );
-				options.inline_title = false;
-				let markdown_a = processor.process_dom(url, document, res, 'answers', options );
-				if (markdown_a.startsWith('Your Answer')) {
-					res.send(markdown_q);
-				}
-				else {
-					res.send(markdown_q + "\n\n## Answer\n"+ markdown_a);
-				}
-			}, (code) => {
-				send_fetch_failure(res, code);
-			});
+			const html = await fetch_url_promise(url);
+			const stripped = filters.strip_style_and_script_blocks(html);
+			const document = new JSDOM(stripped);
+			const question = processor.process_dom(url, document, 'question', options);
+			const answer_options = { ...options, inline_title: false };
+			const answers = processor.process_dom(url, document, 'answers', answer_options);
+			let markdown;
+			if (answers.markdown.startsWith('Your Answer')) {
+				markdown = question.markdown;
+			} else {
+				markdown = question.markdown + "\n\n## Answer\n" + answers.markdown;
+			}
+			return success_result(markdown, question.title);
 		} catch(error) {
-			res.status(400).send(failure_message);
+			if (error instanceof Error) {
+				return { status: 400, body: failure_message };
+			}
+			return build_fetch_failure(error);
 		}
 	}
 }

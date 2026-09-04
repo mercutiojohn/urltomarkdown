@@ -6,13 +6,11 @@ const JSDOM = require('jsdom').JSDOM;
 const service = new turndown();
 
 module.exports = {
-	process_dom: function (url, document, res, id = "", options) {
+	process_dom: function (url, document, id = "", options) {
 		let inline_title = options.inline_title ?? true;
 		let ignore_links = options.ignore_links ?? false;
 		let improve_readability = options.improve_readability ?? true;
 		let title = document.window.document.querySelector('title');
-		if (title)
-			res.header("X-Title", encodeURIComponent(title.textContent));
 		if (id) {
 			let el = document.window.document.querySelector("#"+id);
 			if (el) document = new JSDOM('<!DOCTYPE html>'+ el.innerHTML);			
@@ -39,6 +37,6 @@ module.exports = {
 		if (inline_title && title) {
 			result = "# " + title.textContent + "\n" + result;
 		}
-		return result;
+		return { markdown: result, title: title ? encodeURIComponent(title.textContent) : null };
 	}
 }
