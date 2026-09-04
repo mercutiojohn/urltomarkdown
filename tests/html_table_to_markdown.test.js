@@ -51,3 +51,16 @@ test('convert supports th header cells the same as td cells', () => {
 	expect(output).toContain("|Name|Age|");
 	expect(output).toContain("|Ada |30 |");
 });
+
+test('convert does not throw on a row with no cells (e.g. MediaWiki empty placeholder rows)', () => {
+	// regression: real Wikipedia pages include rows like
+	// <tr class="mw-empty-elt"></tr> with zero td/th cells, which previously
+	// crashed the whole conversion process (TypeError: Cannot read properties
+	// of null (reading 'length')) because the per-row cell match wasn't
+	// guarded against no matches, unlike the row match above it.
+	let html = "<table><tr><td>a</td><td>b</td></tr><tr class=\"mw-empty-elt\"></tr><tr><td>c</td><td>d</td></tr></table>";
+	expect(() => table_to_markdown.convert(html)).not.toThrow();
+	let output = table_to_markdown.convert(html);
+	expect(output).toContain("|a  |b  |");
+	expect(output).toContain("|c  |d  |");
+});

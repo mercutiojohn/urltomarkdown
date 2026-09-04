@@ -32,7 +32,7 @@ module.exports = {
 
 		for (let r=0;r<n_rows;r++) {
 			let item_cols = [];
-			let cols = rows[r].match(/<t[h|d][^>]*>(?:.|\n)*?<\/t[h|d]>/gi);
+			let cols = rows[r].match(/<t[h|d][^>]*>(?:.|\n)*?<\/t[h|d]>/gi) ?? [];
 			for (let c=0;c<cols.length;c++)
 				item_cols.push(this.clean(cols[c]));
 			items.push(item_cols);
