@@ -123,8 +123,3 @@ request.send("html="+encodeURIComponent(html)+"&url="+encodeURIComponent(window.
 Firefox Extension - [ToMarkdown](https://addons.mozilla.org/en-GB/firefox/addon/tomarkdown/)
 
 Safari iOS Extension - [ToMarkdown](https://apps.apple.com/jp/app/tomarkdown/id1619533216?l=en-US)
-
-There is currently no Android or Chrome Extension, Web2MD is a commerical Chrome extension (no affiliation) - [Web2MD](https://chromewebstore.google.com/detail/web2md-web-to-markdown-fo/ijmgpkkfgpijifldbjafjiapehppcbcn)
-
----
-[☕ buy me a coffee](https://buymeacoffee.com/macsplit)
